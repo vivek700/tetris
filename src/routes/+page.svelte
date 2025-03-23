@@ -30,7 +30,7 @@
 	// Create an empty board filled with zeros
 	function createEmptyBoard() {
 		return Array(BOARD_HEIGHT)
-			.fill()
+			.fill(0)
 			.map(() => Array(BOARD_WIDTH).fill(EMPTY_CELL));
 	}
 
@@ -38,7 +38,7 @@
 	function getRandomTetromino() {
 		const pieces = 'IOSTZJL';
 		const randPiece = pieces[Math.floor(Math.random() * pieces.length)];
-		return TETROMINOES[randPiece];
+		return TETROMINOES[randPiece as keyof typeof TETROMINOES];
 	}
 
 	// Spawn a new tetromino at the top of the board
@@ -69,8 +69,8 @@
 
 	// Draw the current piece on the board
 	function drawPiece() {
-		const shape = currentPiece.shape[currentRotation];
-		const color = currentPiece.color;
+		const shape = currentPiece?.shape[currentRotation] || [];
+		const color = currentPiece?.color;
 
 		// Create a new board without modifying the original
 		let newBoard = board.map((row) => [...row]);
@@ -98,8 +98,8 @@
 	}
 
 	// Check if a move would cause a collision
-	function checkCollision(offsetX, offsetY, rotation) {
-		const shape = currentPiece.shape[rotation];
+	function checkCollision(offsetX: number, offsetY: number, rotation: number) {
+		const shape = currentPiece?.shape[rotation] || [];
 
 		for (let i = 0; i < shape.length; i += 2) {
 			const x = currentX + shape[i] + offsetX;
@@ -140,7 +140,7 @@
 	function setupGameLoop() {
 		clearInterval(gameLoop);
 
-		const speed = GAME_SPEEDS[level] || GAME_SPEEDS[10]; // Default to level 10 speed if level > 10
+		const speed = GAME_SPEEDS[level as keyof typeof GAME_SPEEDS] || GAME_SPEEDS[10]; // Default to level 10 speed if level > 10
 
 		gameLoop = setInterval(() => {
 			if (gameRunning) {
@@ -221,7 +221,7 @@
 	}
 
 	// Update the score based on lines cleared
-	function updateScore(lines) {
+	function updateScore(lines: number) {
 		switch (lines) {
 			case 1:
 				score += POINTS.SINGLE * level;
@@ -259,7 +259,7 @@
 	});
 
 	// Handle keyboard input
-	function handleKeydown(event) {
+	function handleKeydown(event: KeyboardEvent) {
 		if (!gameRunning) {
 			if (event.code === 'Space') startGame();
 			return;
@@ -330,7 +330,7 @@
 				break;
 		}
 	}
-	function getCellColor(cellValue) {
+	function getCellColor(cellValue: number) {
 		const colors = [
 			'bg-gray-100', // Empty cell
 			'bg-cyan-400', // I piece
@@ -357,7 +357,7 @@
 	}
 
 	// Helper function to display the next piece preview
-	function isNextPieceCell(x, y) {
+	function isNextPieceCell(x: number, y: number) {
 		if (!nextPiece) return false;
 
 		// Center the piece in the 4x4 grid
