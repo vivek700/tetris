@@ -1,65 +1,90 @@
 <script lang="ts">
-	import { onDestroy, onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
+	import {
+		TETROMINOES,
+		SPAWN_POSITION,
+		GAME_SPEEDS,
+		POINTS,
+		LINES_PER_LEVEL
+	} from '$lib/constants';
 
+	// Game constants
 	const BOARD_WIDTH = 10;
 	const BOARD_HEIGHT = 20;
 	const EMPTY_CELL = 0;
 
+	// Game state
 	let board = createEmptyBoard();
 	let gameRunning = false;
 	let score = 0;
 	let level = 1;
 	let linesCleared = 0;
-	let gameLoop;
-	let currentPiece = null;
+	let gameLoop: ReturnType<typeof setInterval> | undefined;
+	let currentPiece: { shape: number[][]; color: number } | null = null;
 	let currentRotation = 0;
 	let currentX = 0;
 	let currentY = 0;
-	let nextPiece = null;
+	let nextPiece: { shape: number[][]; color: number } | null = null;
+	let gameOver = false;
 
+	// Create an empty board filled with zeros
 	function createEmptyBoard() {
 		return Array(BOARD_HEIGHT)
 			.fill()
 			.map(() => Array(BOARD_WIDTH).fill(EMPTY_CELL));
 	}
 
+	// Get a random tetromino type
 	function getRandomTetromino() {
 		const pieces = 'IOSTZJL';
 		const randPiece = pieces[Math.floor(Math.random() * pieces.length)];
 		return TETROMINOES[randPiece];
 	}
 
+	// Spawn a new tetromino at the top of the board
 	function spawnNewPiece() {
 		if (nextPiece === null) {
 			nextPiece = getRandomTetromino();
 		}
+
 		currentPiece = nextPiece;
 		nextPiece = getRandomTetromino();
 		currentRotation = 0;
 		currentX = SPAWN_POSITION.x;
 		currentY = SPAWN_POSITION.y;
 
+		// Check if the game is over (collision on spawn)
 		if (checkCollision(0, 0, currentRotation)) {
+			// Game Over
 			gameRunning = false;
+			gameOver = true;
 			clearInterval(gameLoop);
 			return false;
 		}
+
+		// Update the board with the new piece
 		drawPiece();
 		return true;
 	}
+
+	// Draw the current piece on the board
 	function drawPiece() {
 		const shape = currentPiece.shape[currentRotation];
 		const color = currentPiece.color;
 
+		// Create a new board without modifying the original
 		let newBoard = board.map((row) => [...row]);
+
+		// Clear the active piece from the board (for redrawing)
 		for (let y = 0; y < BOARD_HEIGHT; y++) {
 			for (let x = 0; x < BOARD_WIDTH; x++) {
-				if (board[y][x] >= 1 && board[y][x] <= 7) {
+				if (newBoard[y][x] >= 1 && newBoard[y][x] <= 7) {
 					newBoard[y][x] = EMPTY_CELL;
 				}
 			}
 		}
 
+		// Draw the piece on the board
 		for (let i = 0; i < shape.length; i += 2) {
 			const x = currentX + shape[i];
 			const y = currentY + shape[i + 1];
@@ -68,28 +93,172 @@
 				newBoard[y][x] = color;
 			}
 		}
+
 		board = newBoard;
 	}
 
+	// Check if a move would cause a collision
+	function checkCollision(offsetX, offsetY, rotation) {
+		const shape = currentPiece.shape[rotation];
+
+		for (let i = 0; i < shape.length; i += 2) {
+			const x = currentX + shape[i] + offsetX;
+			const y = currentY + shape[i + 1] + offsetY;
+
+			// Check boundaries
+			if (x < 0 || x >= BOARD_WIDTH || y < 0 || y >= BOARD_HEIGHT) {
+				return true;
+			}
+
+			// Check if the cell is already occupied by a locked piece (value > 10)
+			if (y >= 0 && board[y][x] > 10) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	// Game initialization
 	function startGame() {
 		board = createEmptyBoard();
 		gameRunning = true;
+		gameOver = false;
 		score = 0;
 		level = 1;
 		linesCleared = 0;
+		nextPiece = null;
 
+		// Generate first piece
 		spawnNewPiece();
 
+		// Set up game loop
 		setupGameLoop();
 	}
 
+	// Set up the main game loop
+	function setupGameLoop() {
+		clearInterval(gameLoop);
+
+		const speed = GAME_SPEEDS[level] || GAME_SPEEDS[10]; // Default to level 10 speed if level > 10
+
+		gameLoop = setInterval(() => {
+			if (gameRunning) {
+				moveDown();
+			}
+		}, speed);
+	}
+
+	// Move the current piece down
+	function moveDown() {
+		if (!checkCollision(0, 1, currentRotation)) {
+			currentY++;
+			drawPiece();
+			return true;
+		} else {
+			// Lock the piece in place and check for line clears
+			lockPiece();
+			return false;
+		}
+	}
+
+	// Lock the current piece in place
+	function lockPiece() {
+		// Convert active piece cells to landed pieces
+		for (let y = 0; y < BOARD_HEIGHT; y++) {
+			for (let x = 0; x < BOARD_WIDTH; x++) {
+				if (board[y][x] >= 1 && board[y][x] <= 7) {
+					board[y][x] = board[y][x] + 10; // Add 10 to indicate a settled piece
+				}
+			}
+		}
+
+		// Check for completed lines
+		checkLines();
+
+		// Spawn a new piece
+		spawnNewPiece();
+	}
+
+	// Check for completed lines and remove them
+	function checkLines() {
+		let linesCount = 0;
+
+		for (let y = BOARD_HEIGHT - 1; y >= 0; y--) {
+			let lineComplete = true;
+
+			for (let x = 0; x < BOARD_WIDTH; x++) {
+				if (board[y][x] < 10) {
+					lineComplete = false;
+					break;
+				}
+			}
+
+			if (lineComplete) {
+				linesCount++;
+
+				// Remove the line
+				for (let yy = y; yy > 0; yy--) {
+					for (let x = 0; x < BOARD_WIDTH; x++) {
+						board[yy][x] = board[yy - 1][x];
+					}
+				}
+
+				// Clear the top line
+				for (let x = 0; x < BOARD_WIDTH; x++) {
+					board[0][x] = EMPTY_CELL;
+				}
+
+				// Move the check position back up
+				y++;
+			}
+		}
+
+		// Update score based on lines cleared
+		if (linesCount > 0) {
+			updateScore(linesCount);
+		}
+	}
+
+	// Update the score based on lines cleared
+	function updateScore(lines) {
+		switch (lines) {
+			case 1:
+				score += POINTS.SINGLE * level;
+				break;
+			case 2:
+				score += POINTS.DOUBLE * level;
+				break;
+			case 3:
+				score += POINTS.TRIPLE * level;
+				break;
+			case 4:
+				score += POINTS.TETRIS * level;
+				break;
+		}
+
+		linesCleared += lines;
+
+		// Check for level up
+		const newLevel = Math.floor(linesCleared / LINES_PER_LEVEL) + 1;
+		if (newLevel > level) {
+			level = newLevel;
+			setupGameLoop(); // Update game speed
+		}
+	}
+
 	onMount(() => {
-		window?.addEventListener('keydown', handleKeydown);
+		// Set up keyboard event listeners when the component mounts
+		window.addEventListener('keydown', handleKeydown);
 	});
+
 	onDestroy(() => {
-		window?.removeEventListener('keydown', handleKeydown);
+		// Clean up event listeners and game loop when component is destroyed
+		window.removeEventListener('keydown', handleKeydown);
 		clearInterval(gameLoop);
 	});
+
+	// Handle keyboard input
 	function handleKeydown(event) {
 		if (!gameRunning) {
 			if (event.code === 'Space') startGame();
@@ -98,21 +267,65 @@
 
 		switch (event.code) {
 			case 'ArrowLeft':
-				//move piece left
+				if (!checkCollision(-1, 0, currentRotation)) {
+					currentX--;
+					drawPiece();
+				}
 				break;
 			case 'ArrowRight':
-				//move piece right
+				if (!checkCollision(1, 0, currentRotation)) {
+					currentX++;
+					drawPiece();
+				}
 				break;
 			case 'ArrowDown':
-				//move piece left
+				if (moveDown()) {
+					score += POINTS.SOFT_DROP; // Points for soft drop
+				}
 				break;
 			case 'ArrowUp':
-				//move piece left
+				const nextRotation = (currentRotation + 1) % 4;
+				if (!checkCollision(0, 0, nextRotation)) {
+					currentRotation = nextRotation;
+					drawPiece();
+				} else {
+					// Wall kick - try to adjust position if rotation fails
+					// Try moving left
+					if (!checkCollision(-1, 0, nextRotation)) {
+						currentX--;
+						currentRotation = nextRotation;
+						drawPiece();
+					}
+					// Try moving right
+					else if (!checkCollision(1, 0, nextRotation)) {
+						currentX++;
+						currentRotation = nextRotation;
+						drawPiece();
+					}
+					// Try moving up (for I piece mainly)
+					else if (!checkCollision(0, -1, nextRotation)) {
+						currentY--;
+						currentRotation = nextRotation;
+						drawPiece();
+					}
+				}
 				break;
 			case 'Space':
-				//move piece left
+				// Hard drop
+				let dropDistance = 0;
+				while (!checkCollision(0, dropDistance + 1, currentRotation)) {
+					dropDistance++;
+				}
+
+				if (dropDistance > 0) {
+					score += POINTS.HARD_DROP * dropDistance;
+					currentY += dropDistance;
+					drawPiece();
+					lockPiece();
+				}
 				break;
 			case 'KeyP':
+				// Pause game
 				gameRunning = !gameRunning;
 				break;
 		}
@@ -129,39 +342,105 @@
 			'bg-orange-500' // L piece
 		];
 
-		return colors[cellValue];
+		// For settled pieces (value > 10), use the same colors but subtract 10
+		if (cellValue >= 11 && cellValue <= 17) {
+			return colors[cellValue - 10] + ' border-gray-400';
+		}
+
+		// For active pieces (value 1-7)
+		if (cellValue >= 1 && cellValue <= 7) {
+			return colors[cellValue];
+		}
+
+		// Default for empty cells
+		return colors[0];
+	}
+
+	// Helper function to display the next piece preview
+	function isNextPieceCell(x, y) {
+		if (!nextPiece) return false;
+
+		// Center the piece in the 4x4 grid
+		const offsetX = 1;
+		const offsetY = 1;
+
+		const shape = nextPiece.shape[0]; // Use the first rotation state
+
+		for (let i = 0; i < shape.length; i += 2) {
+			const pieceX = shape[i] + offsetX + 1; // +1 for center point
+			const pieceY = shape[i + 1] + offsetY + 1; // +1 for center point
+
+			if (x === pieceX && y === pieceY) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 </script>
 
-<main class="flex min-h-screen items-center justify-center bg-gray-100 p-4">
+<main
+	class="flex min-h-screen items-center justify-center bg-gradient-to-b from-gray-800 to-gray-900 p-4"
+>
 	<div class="flex flex-col items-center gap-8 md:flex-row">
-		<div class="rounded-lg bg-white p-6 shadow-lg">
-			<h1 class="mb-4 text-center text-3xl font-bold">Tetris</h1>
-			<div class="mb-4 space-y-2">
-				<p class="text-lg font-medium">Score: <span class="font-bold">{score}</span></p>
-				<p class="text-lg font-medium">Level: <span class="font-bold">{level}</span></p>
-				<p class="text-lg font-medium">Lines: <span class="font-bold">{linesCleared}</span></p>
+		<div class="rounded-lg border border-gray-600 bg-gray-700 p-6 shadow-xl">
+			<h1 class="mb-6 text-center text-3xl font-bold text-white">TETRIS</h1>
+			<div class="mb-4 space-y-2 rounded-lg bg-gray-800 p-4">
+				<p class="text-lg font-medium text-white">
+					Score: <span class="font-bold text-yellow-300">{score}</span>
+				</p>
+				<p class="text-lg font-medium text-white">
+					Level: <span class="font-bold text-green-400">{level}</span>
+				</p>
+				<p class="text-lg font-medium text-white">
+					Lines: <span class="font-bold text-blue-300">{linesCleared}</span>
+				</p>
 			</div>
+
+			{#if nextPiece}
+				<div class="mt-6 rounded-lg bg-gray-800 p-4">
+					<p class="mb-2 text-lg font-medium text-white">Next Piece:</p>
+					<div class="mx-auto grid h-24 w-24 grid-cols-4 grid-rows-4 gap-0">
+						{#each Array(4) as _, y}
+							{#each Array(4) as _, x}
+								<div
+									class="h-6 w-6 border border-gray-700 {isNextPieceCell(x, y)
+										? getCellColor(nextPiece.color)
+										: 'bg-gray-900'}"
+								></div>
+							{/each}
+						{/each}
+					</div>
+				</div>
+			{/if}
+
+			<div class="mt-6 rounded-lg bg-gray-800 p-4">
+				<p class="mb-2 text-lg font-medium text-white">Controls:</p>
+				<div class="space-y-1 text-sm text-gray-300">
+					<p>⬅️ ➡️: Move</p>
+					<p>⬇️: Soft Drop</p>
+					<p>⬆️: Rotate</p>
+					<p>Space: Hard Drop</p>
+					<p>P: Pause</p>
+				</div>
+			</div>
+
 			{#if !gameRunning}
 				<button
 					on:click={startGame}
-					class="w-full rounded bg-green-500 px-4 py-2 font-bold text-white transition-colors hover:bg-green-600"
+					class="mt-6 w-full rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 px-4 py-3 font-bold text-white shadow-lg transition-colors hover:from-blue-600 hover:to-purple-700"
 				>
-					{score > 0 ? 'Resume Game' : 'Start Game'}
+					{gameOver ? 'Game Over - Play Again' : score > 0 ? 'Resume Game' : 'Start Game'}
 				</button>
 			{/if}
 		</div>
 
-		<div class="rounded-lg bg-white p-2 shadow-lg">
-			<div class="border-2 border-gray-800 bg-gray-100">
+		<div class="rounded-lg border border-gray-600 bg-gray-700 p-4 shadow-xl">
+			<div class="border-2 border-gray-600 bg-gray-900 shadow-inner">
 				{#each board as row, rowIndex}
 					<div class="flex">
 						{#each row as cell, colIndex}
-							<div
-								class="h-6 w-6 border border-gray-300 {cell !== EMPTY_CELL
-									? getCellColor(cell)
-									: 'bg-gray-100'}"
-							></div>
+							<div class="h-7 w-7 border border-gray-800 {getCellColor(cell)}"></div>
 						{/each}
 					</div>
 				{/each}

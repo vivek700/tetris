@@ -3,11 +3,12 @@
 // Each array represents a different rotation state
 export const TETROMINOES = {
 	I: {
+
 		shape: [
-			[0, -1, 0, 1, 0, 2],  // [[0,0], [0,-1], [0,1], [0,2]] - vertical
-			[-1, 0, 1, 0, 2, 0],  // [[0,0], [-1,0], [1,0], [2,0]] - horizontal
-			[0, -1, 0, 1, 0, 2],
-			[-1, 0, 1, 0, 2, 0]
+			[0, -1, 0, 0, 0, 1, 0, 2],  // vertical: includes [0,0]
+			[-1, 0, 0, 0, 1, 0, 2, 0],  // horizontal: includes [0,0]
+			[0, -1, 0, 0, 0, 1, 0, 2],
+			[-1, 0, 0, 0, 1, 0, 2, 0]
 		],
 		color: 1
 	},
