@@ -27,6 +27,11 @@
 	let nextPiece: { shape: number[][]; color: number } | null = null;
 	let gameOver = false;
 
+	// Touch controls variables
+	let touchStartX = 0;
+	let touchStartY = 0;
+	let touchStartTime = 0;
+
 	// Create an empty board filled with zeros
 	function createEmptyBoard() {
 		return Array(BOARD_HEIGHT)
@@ -247,14 +252,148 @@
 		}
 	}
 
+	// TOUCH CONTROL FUNCTIONS
+
+	// Handle touch start event
+	function handleTouchStart(event: TouchEvent) {
+		if (!gameRunning) {
+			startGame();
+			return;
+		}
+
+		const touch = event.touches[0];
+		touchStartX = touch.clientX;
+		touchStartY = touch.clientY;
+		touchStartTime = Date.now();
+	}
+
+	// Handle touch end event
+	function handleTouchEnd(event: TouchEvent) {
+		if (!gameRunning || !currentPiece) return;
+
+		const touch = event.changedTouches[0];
+		const touchEndX = touch.clientX;
+		const touchEndY = touch.clientY;
+		const touchEndTime = Date.now();
+
+		const touchDuration = touchEndTime - touchStartTime;
+		const deltaX = touchEndX - touchStartX;
+		const deltaY = touchEndY - touchStartY;
+		const absDeltaX = Math.abs(deltaX);
+		const absDeltaY = Math.abs(deltaY);
+
+		// Determine if it was a swipe (longer movement) or a tap (short movement)
+		const minSwipeDistance = 30; // Minimum distance to consider it a swipe
+		const maxTapDistance = 10; // Maximum distance to consider it a tap
+		const maxTapDuration = 200; // Maximum duration for a tap in milliseconds
+
+		// Handle swipes
+		if (absDeltaX > minSwipeDistance || absDeltaY > minSwipeDistance) {
+			// Horizontal swipe
+			if (absDeltaX > absDeltaY) {
+				if (deltaX > 0) {
+					// Swipe right
+					if (!checkCollision(1, 0, currentRotation)) {
+						currentX++;
+						drawPiece();
+					}
+				} else {
+					// Swipe left
+					if (!checkCollision(-1, 0, currentRotation)) {
+						currentX--;
+						drawPiece();
+					}
+				}
+			}
+			// Vertical swipe
+			else {
+				if (deltaY > 0) {
+					// Swipe down (soft drop)
+					if (moveDown()) {
+						score += POINTS.SOFT_DROP;
+					}
+				} else {
+					// Swipe up (hard drop)
+					let dropDistance = 0;
+					while (!checkCollision(0, dropDistance + 1, currentRotation)) {
+						dropDistance++;
+					}
+
+					if (dropDistance > 0) {
+						score += POINTS.HARD_DROP * dropDistance;
+						currentY += dropDistance;
+						drawPiece();
+						lockPiece();
+					}
+				}
+			}
+		}
+		// Handle tap (rotate)
+		else if (
+			absDeltaX <= maxTapDistance &&
+			absDeltaY <= maxTapDistance &&
+			touchDuration <= maxTapDuration
+		) {
+			// Tap detected - rotate the piece
+			const nextRotation = (currentRotation + 1) % 4;
+			if (!checkCollision(0, 0, nextRotation)) {
+				currentRotation = nextRotation;
+				drawPiece();
+			} else {
+				// Wall kick - try to adjust position if rotation fails
+				// Try moving left
+				if (!checkCollision(-1, 0, nextRotation)) {
+					currentX--;
+					currentRotation = nextRotation;
+					drawPiece();
+				}
+				// Try moving right
+				else if (!checkCollision(1, 0, nextRotation)) {
+					currentX++;
+					currentRotation = nextRotation;
+					drawPiece();
+				}
+				// Try moving up (for I piece mainly)
+				else if (!checkCollision(0, -1, nextRotation)) {
+					currentY--;
+					currentRotation = nextRotation;
+					drawPiece();
+				}
+			}
+		}
+	}
+
+	// Handle touch move event - prevent default to avoid scrolling
+	function handleTouchMove(event: TouchEvent) {
+		if (gameRunning) {
+			event.preventDefault();
+		}
+	}
+
 	onMount(() => {
 		// Set up keyboard event listeners when the component mounts
 		window.addEventListener('keydown', handleKeydown);
+
+		// Set up touch event listeners
+		const gameBoard = document.getElementById('game-board');
+		if (gameBoard) {
+			gameBoard.addEventListener('touchstart', handleTouchStart, { passive: false });
+			gameBoard.addEventListener('touchend', handleTouchEnd, { passive: false });
+			gameBoard.addEventListener('touchmove', handleTouchMove, { passive: false });
+		}
 	});
 
 	onDestroy(() => {
 		// Clean up event listeners and game loop when component is destroyed
 		window.removeEventListener('keydown', handleKeydown);
+
+		const gameBoard = document.getElementById('game-board');
+		if (gameBoard) {
+			gameBoard.removeEventListener('touchstart', handleTouchStart);
+			gameBoard.removeEventListener('touchend', handleTouchEnd);
+			gameBoard.removeEventListener('touchmove', handleTouchMove);
+		}
+
 		clearInterval(gameLoop);
 	});
 
@@ -422,6 +561,12 @@
 					<p>⬆️: Rotate</p>
 					<p>Space: Hard Drop</p>
 					<p>P: Pause</p>
+					<hr class="my-1 border-gray-600" />
+					<p class="font-medium text-blue-300">Touch Controls:</p>
+					<p>Tap: Rotate</p>
+					<p>Swipe Left/Right: Move</p>
+					<p>Swipe Down: Soft Drop</p>
+					<p>Swipe Up: Hard Drop</p>
 				</div>
 			</div>
 
@@ -435,7 +580,10 @@
 			{/if}
 		</div>
 
-		<div class="rounded-lg border border-gray-600 bg-gray-700 p-4 shadow-xl">
+		<div
+			id="game-board"
+			class="touch-manipulation rounded-lg border border-gray-600 bg-gray-700 p-4 shadow-xl"
+		>
 			<div class="border-2 border-gray-600 bg-gray-900 shadow-inner">
 				{#each board as row, rowIndex}
 					<div class="flex">
